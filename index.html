@@ -1,62 +1,167 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <title>Camera + Pose</title>
-  <style>
-    video, canvas {
-      transform: scaleX(-1);
-      position: absolute;
-      top: 0;
-      left: 0;
-    }
-  </style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>كاميرا وقماش مع تايمر</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            text-align: center;
+            margin: 0;
+            padding: 0;
+        }
+
+        #videoCanvas {
+            margin: 20px auto;
+            border: 1px solid black;
+            display: block;
+        }
+
+        #controls, #timerControls {
+            margin: 20px;
+        }
+
+        button {
+            margin: 5px;
+            padding: 10px 20px;
+            font-size: 1em;
+        }
+
+        #timer {
+            font-size: 2em;
+            margin: 20px;
+        }
+    </style>
 </head>
 <body>
-  <video id="video" width="640" height="480" autoplay playsinline></video>
-  <canvas id="output" width="640" height="480"></canvas>
+    <h1>كاميرا وقماش مع تايمر دقيق</h1>
 
-  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-core"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-converter"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/posenet"></script>
+    <!-- عرض الفيديو -->
+    <video id="video" autoplay playsinline></video>
 
-  <script>
-    const video = document.getElementById('video');
-    const canvas = document.getElementById('output');
-    const ctx = canvas.getContext('2d');
+    <!-- القماش -->
+    <canvas id="videoCanvas" width="640" height="480"></canvas>
 
-    async function setupCamera() {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: true
-      });
-      video.srcObject = stream;
-      return new Promise(resolve => {
-        video.onloadedmetadata = () => resolve(video);
-      });
-    }
+    <!-- أدوات التحكم في الكاميرا -->
+    <div id="controls">
+        <button id="capturePoint">وضع نقطة</button>
+        <button id="deletePoint">حذف النقطة</button>
+        <button id="clearCanvas">حذف جميع النقاط</button>
+    </div>
 
-    async function runPoseNet() {
-      await setupCamera();
-      const net = await posenet.load();
+    <!-- عرض الوقت -->
+    <div id="timer">00:00:00.000</div>
 
-      async function detect() {
-        const pose = await net.estimateSinglePose(video, { flipHorizontal: true });
-        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-        pose.keypoints.forEach(p => {
-          if (p.score > 0.5) {
-            ctx.beginPath();
-            ctx.arc(p.position.x, p.position.y, 5, 0, 2 * Math.PI);
-            ctx.fillStyle = 'red';
-            ctx.fill();
-          }
+    <!-- أدوات التحكم في التايمر -->
+    <div id="timerControls">
+        <button id="startTimer">ابدأ</button>
+        <button id="stopTimer">إيقاف</button>
+        <button id="resetTimer">إعادة تعيين</button>
+    </div>
+
+    <script>
+        // ========== إعداد الكاميرا والقماش ==========
+        const video = document.getElementById('video');
+        const canvas = document.getElementById('videoCanvas');
+        const ctx = canvas.getContext('2d');
+        const capturePointBtn = document.getElementById('capturePoint');
+        const deletePointBtn = document.getElementById('deletePoint');
+        const clearCanvasBtn = document.getElementById('clearCanvas');
+        let points = [];
+
+        // تشغيل الكاميرا
+        async function startCamera() {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+                video.srcObject = stream;
+                video.onloadedmetadata = () => {
+                    video.play();
+                    drawToCanvas();
+                };
+            } catch (err) {
+                console.error("خطأ في تشغيل الكاميرا:", err);
+            }
+        }
+
+        // رسم الفيديو على القماش
+        function drawToCanvas() {
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+            points.forEach(point => {
+                ctx.fillStyle = 'red';
+                ctx.beginPath();
+                ctx.arc(point.x, point.y, 5, 0, Math.PI * 2);
+                ctx.fill();
+            });
+            requestAnimationFrame(drawToCanvas);
+        }
+
+        // وضع نقطة
+        canvas.addEventListener('click', (e) => {
+            const rect = canvas.getBoundingClientRect();
+            const x = e.clientX - rect.left;
+            const y = e.clientY - rect.top;
+            points.push({ x, y });
         });
-        requestAnimationFrame(detect);
-      }
 
-      detect();
-    }
+        // حذف النقطة الأخيرة
+        deletePointBtn.addEventListener('click', () => {
+            points.pop();
+        });
 
-    runPoseNet();
-  </script>
+        // حذف جميع النقاط
+        clearCanvasBtn.addEventListener('click', () => {
+            points = [];
+        });
+
+        startCamera();
+
+        // ========== إعداد التايمر ==========
+        let startTime = 0;
+        let elapsedTime = 0;
+        let timerInterval;
+        const timerDisplay = document.getElementById('timer');
+
+        // تحديث عرض الوقت
+        function formatTime(time) {
+            const milliseconds = Math.floor(time % 1000).toString().padStart(3, '0');
+            const seconds = Math.floor((time / 1000) % 60).toString().padStart(2, '0');
+            const minutes = Math.floor((time / (1000 * 60)) % 60).toString().padStart(2, '0');
+            const hours = Math.floor(time / (1000 * 60 * 60)).toString().padStart(2, '0');
+            return `${hours}:${minutes}:${seconds}.${milliseconds}`;
+        }
+
+        function updateTimer() {
+            const now = performance.now();
+            const currentTime = elapsedTime + (now - startTime);
+            timerDisplay.textContent = formatTime(currentTime);
+        }
+
+        // زر البدء
+        document.getElementById('startTimer').addEventListener('click', () => {
+            if (!timerInterval) {
+                startTime = performance.now();
+                timerInterval = setInterval(updateTimer, 10); // التحديث كل 10 مللي ثانية
+            }
+        });
+
+        // زر الإيقاف
+        document.getElementById('stopTimer').addEventListener('click', () => {
+            if (timerInterval) {
+                clearInterval(timerInterval);
+                timerInterval = null;
+                elapsedTime += performance.now() - startTime;
+            }
+        });
+
+        // زر إعادة التعيين
+        document.getElementById('resetTimer').addEventListener('click', () => {
+            clearInterval(timerInterval);
+            timerInterval = null;
+            startTime = 0;
+            elapsedTime = 0;
+            timerDisplay.textContent = '00:00:00.000';
+        });
+    </script>
 </body>
 </html>
