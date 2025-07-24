@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Camera + Pose</title>
+  <style>
+    video, canvas {
+      transform: scaleX(-1);
+      position: absolute;
+      top: 0;
+      left: 0;
+    }
+  </style>
+</head>
+<body>
+  <video id="video" width="640" height="480" autoplay playsinline></video>
+  <canvas id="output" width="640" height="480"></canvas>
+
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-core"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-converter"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/posenet"></script>
+
+  <script>
+    const video = document.getElementById('video');
+    const canvas = document.getElementById('output');
+    const ctx = canvas.getContext('2d');
+
+    async function setupCamera() {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: true
+      });
+      video.srcObject = stream;
+      return new Promise(resolve => {
+        video.onloadedmetadata = () => resolve(video);
+      });
+    }
+
+    async function runPoseNet() {
+      await setupCamera();
+      const net = await posenet.load();
+
+      async function detect() {
+        const pose = await net.estimateSinglePose(video, { flipHorizontal: true });
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        pose.keypoints.forEach(p => {
+          if (p.score > 0.5) {
+            ctx.beginPath();
+            ctx.arc(p.position.x, p.position.y, 5, 0, 2 * Math.PI);
+            ctx.fillStyle = 'red';
+            ctx.fill();
+          }
+        });
+        requestAnimationFrame(detect);
+      }
+
+      detect();
+    }
+
+    runPoseNet();
+  </script>
+</body>
+</html>
